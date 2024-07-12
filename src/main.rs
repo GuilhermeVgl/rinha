@@ -1,25 +1,44 @@
+use axum::{
+    extract::{Path, State, Json}, 
+    http::{StatusCode}, 
+    response::IntoResponse, 
+    routing::{get, post}, 
+    Router
+};
+use tokio::sync::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
 use time::{macros::date, Date};
 use uuid::Uuid;
-    
-    use axum::{
-        extract::State, 
-        handler::Handler, 
-        http::StatusCode, 
-        response::IntoResponse, 
-        routing::{get, post}, Router
-    };
+use serde::Serialize;
+use serde::Deserialize;
 
+time::serde::format_description!(date_format, Date, "[year]-[month]-[day]");
+
+#[derive(Clone, Serialize)]
 pub struct Person {
-    id: Uuid,
-    name: String,
-    nick: String,
-    birth_date: Date,
-    stack: Vec<String>,
+    pub id: Uuid,
+    #[serde(rename = "nome")]
+    pub name: String,
+    #[serde(rename = "apelido")]
+    pub nick: String,
+    #[serde(rename = "nascimento", with = "date_format")]
+    pub birth_date: Date,
+    pub stack: Option<Vec<String>>,
 }
 
-type AppState = Arc<HashMap<Uuid, Person>>;
+#[derive(Clone, Deserialize)]
+pub struct NewPerson {
+    #[serde(rename = "nome")]
+    pub name: String,
+    #[serde(rename = "apelido")]
+    pub nick: String,
+    #[serde(rename = "nascimento", with = "date_format")]
+    pub birth_date: Date,
+    pub stack: Option<Vec<String>>,
+}
+
+type AppState = Arc<Mutex<HashMap<Uuid, Person>>>;
 
 #[tokio::main]
 async fn main() {
@@ -31,12 +50,14 @@ async fn main() {
         name: String::from("Guilherme"),
         nick: String::from("Gui"),
         birth_date: date!(1995 - 01 - 25),
-        stack: vec!["Java".to_string(),"Angular".to_string(),"Ruby".to_string()],
+        stack: None,
     };
+
+    println!("{}", person.id);
 
     people.insert(person.id, person);
 
-    let app_state: AppState = Arc::new(people);
+    let app_state: AppState = Arc::new(Mutex::new(people));
 
     let app = Router::new()
             .route("/pessoas", get(search_people))
@@ -49,19 +70,50 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn search_people(state: State<Arc<HashMap<Uuid, Person>>>) -> impl IntoResponse {
+async fn search_people() -> impl IntoResponse {
     (StatusCode::OK, "Busca")
 }
 
-async fn find_person() -> impl IntoResponse {
-    (StatusCode::OK, "By id")
+async fn find_person(
+    State(people): State<AppState>, 
+    Path(person_id): Path<Uuid>
+) -> impl IntoResponse {
+
+    let my_people = people.lock().await;
+
+    match my_people.get(&person_id) {
+        Some(person) => Ok(Json(person.clone())),
+        None => Err(StatusCode::NOT_FOUND),
+    }
 }
 
-async fn create_person() -> impl IntoResponse {
-    (StatusCode::OK, "Create")
+async fn create_person(
+    State(people): State<AppState>,
+    Json(new_person): Json<NewPerson>, 
+) -> Result<(StatusCode, Json<Person>), StatusCode>{
+    if new_person.name.len() > 100 || new_person.nick.len() > 32{
+        return Err(StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    let id = Uuid::now_v7();
+    let person = Person {
+        id,
+        name: new_person.name,
+        birth_date: new_person.birth_date,
+        nick: new_person.nick,
+        stack: new_person.stack,
+    };
+
+    people.lock().await.insert(id, person.clone());
+
+    Ok((StatusCode::OK, Json(person)))
 }
 
-async fn count_people() -> impl IntoResponse {
-   (StatusCode::OK, "Count") 
+async fn count_people(
+    State(people): State<AppState>
+)-> impl IntoResponse {
+    let count = people.lock().await.len();
+
+   (StatusCode::OK, Json(count)) 
 }
 
