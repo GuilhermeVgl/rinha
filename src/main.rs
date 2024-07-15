@@ -1,6 +1,6 @@
 use axum::{
     extract::{Path, State, Json}, 
-    http::{StatusCode}, 
+    http::StatusCode, 
     response::IntoResponse, 
     routing::{get, post}, 
     Router
@@ -12,7 +12,6 @@ use time::{macros::date, Date};
 use uuid::Uuid;
 use serde::Serialize;
 use serde::Deserialize;
-
 time::serde::format_description!(date_format, Date, "[year]-[month]-[day]");
 
 #[derive(Clone, Serialize)]
@@ -28,14 +27,68 @@ pub struct Person {
 }
 
 #[derive(Clone, Deserialize)]
+#[serde(try_from = "String")]
+pub struct PersonName (String);
+
+impl TryFrom<String> for PersonName {
+    type Error = &'static str;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value.len() <= 100 {
+            Ok(Self(value))
+        } else {
+            Err("Name too big")
+        }
+    }
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(try_from = "String")]
+pub struct Nick (String);
+
+impl TryFrom<String> for Nick {
+    type Error = &'static str;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value.len() <= 32 {
+            Ok(Self(value))
+        } else {
+            Err("Nick too big")
+        }
+    }
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(try_from = "String")]
+pub struct Tech (String);
+
+impl TryFrom<String> for Tech {
+    type Error = &'static str;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value.len() <= 32 {
+            Ok(Self(value))
+        } else {
+            Err("Some tech is too big")
+        }
+    }
+}
+
+impl From<Tech> for String {
+    fn from(value: Tech) -> Self {
+        value.0
+    }
+}
+
+#[derive(Clone, Deserialize)]
 pub struct NewPerson {
     #[serde(rename = "nome")]
-    pub name: String,
+    pub name: PersonName,
     #[serde(rename = "apelido")]
-    pub nick: String,
+    pub nick: Nick, 
     #[serde(rename = "nascimento", with = "date_format")]
     pub birth_date: Date,
-    pub stack: Option<Vec<String>>,
+    pub stack: Option<Vec<Tech>>,
 }
 
 type AppState = Arc<Mutex<HashMap<Uuid, Person>>>;
@@ -90,23 +143,22 @@ async fn find_person(
 async fn create_person(
     State(people): State<AppState>,
     Json(new_person): Json<NewPerson>, 
-) -> Result<(StatusCode, Json<Person>), StatusCode>{
-    if new_person.name.len() > 100 || new_person.nick.len() > 32{
-        return Err(StatusCode::UNPROCESSABLE_ENTITY);
-    }
+) -> impl IntoResponse{
 
     let id = Uuid::now_v7();
     let person = Person {
         id,
-        name: new_person.name,
+        name: new_person.name.0,
         birth_date: new_person.birth_date,
-        nick: new_person.nick,
-        stack: new_person.stack,
+        nick: new_person.nick.0,
+        stack: new_person
+            .stack
+            .map(|stack| stack.into_iter().map(String::from).collect()),
     };
 
     people.lock().await.insert(id, person.clone());
 
-    Ok((StatusCode::OK, Json(person)))
+    (StatusCode::CREATED, Json(person))
 }
 
 async fn count_people(
