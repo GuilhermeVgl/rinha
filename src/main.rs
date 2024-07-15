@@ -5,6 +5,8 @@ use axum::{
     routing::{get, post}, 
     Router
 };
+use persistance::PostgresRepository;
+use std::env;
 use tokio::sync::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -13,8 +15,9 @@ use uuid::Uuid;
 use serde::Serialize;
 use serde::Deserialize;
 time::serde::format_description!(date_format, Date, "[year]-[month]-[day]");
+mod persistance;
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, sqlx::FromRow)]
 pub struct Person {
     pub id: Uuid,
     #[serde(rename = "nome")]
@@ -96,7 +99,24 @@ type AppState = Arc<Mutex<HashMap<Uuid, Person>>>;
 #[tokio::main]
 async fn main() {
 
-    let mut people: HashMap<Uuid, Person> = HashMap::new();
+    let port = env::var("PORT")
+        .ok()
+        .and_then(|port| port.parse::<u16>().ok())
+        .unwrap_or(9999);
+
+    let database_url = env::var("DATABASE_URL")
+        .unwrap_or(String::from(gg"postgres://rinha:rinha@localhost:5432/rinha"));
+
+    let database_pool_size = env::var("DATABASE_POOL")
+        .ok()
+        .and_then(|port| port.parse::<u32>().ok())
+        .unwrap_or(30);
+
+    let repo = PostgresRepository::connect(&database_url, database_pool_size)
+        .await
+        .unwrap();
+
+    let app_state = Arc::new(repo);
 
     let person = Person {
         id: Uuid::now_v7(),
@@ -105,12 +125,6 @@ async fn main() {
         birth_date: date!(1995 - 01 - 25),
         stack: None,
     };
-
-    println!("{}", person.id);
-
-    people.insert(person.id, person);
-
-    let app_state: AppState = Arc::new(Mutex::new(people));
 
     let app = Router::new()
             .route("/pessoas", get(search_people))
