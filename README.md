@@ -3,7 +3,7 @@
 ![Rust](https://img.shields.io/badge/Rust-2021_Edition-000000?logo=rust&logoColor=white)
 ![Axum](https://img.shields.io/badge/Axum-0.7-555555)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-4169E1?logo=postgresql&logoColor=white)
-![Status](https://img.shields.io/badge/Status-Em_desenvolvimento-yellow)
+![Status](https://img.shields.io/badge/Status-Concluído-green)
 
 API de cadastro e consulta de pessoas em **Rust**, baseada no desafio da [Rinha de Backend — edição 2023 Q3](https://github.com/zanfranceschi/rinha-de-backend-2023-q3). O projeto explora HTTP assíncrono com Axum e Tokio, validação de dados com Serde e persistência em PostgreSQL com SQLx.
 
